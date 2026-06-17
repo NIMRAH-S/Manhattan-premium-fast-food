@@ -1,0 +1,8 @@
+{
+  "name": "Manhattan Premium Fast Food",
+  "description": "A sophisticated, high-performance web application for a premium fast-food restaurant featuring cinematic animations, full e-commerce functionality, and a robust admin dashboard.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
