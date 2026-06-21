@@ -4,7 +4,7 @@ A premium fast food restaurant web app built with React, Vite, Firebase Authenti
 
 ## Repository
 
-- GitHub repo name: `manhattan-premium-fast-food`
+- GitHub repo name: `Manhattan-premium-fast-food`
 - Description: Premium fast food restaurant storefront with customer menu browsing, cart checkout, and admin dashboard support.
 
 ## Features

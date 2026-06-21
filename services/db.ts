@@ -1,110 +1,122 @@
-import { Product, Order, AdminLog, Category } from '../types';
-import { INITIAL_PRODUCTS } from '../constants';
+import {
+  collection,
+  doc,
+  getDocs,
+  getDoc,
+  setDoc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  query,
+  orderBy,
+  Unsubscribe,
+} from 'firebase/firestore';
+import { db as firestore } from './firebase';
+import { Product, Order, AdminLog } from '../types';
 
-const DB_KEYS = {
-  PRODUCTS: 'manhattan_products',
-  ORDERS: 'manhattan_orders',
-  LOGS: 'manhattan_logs',
+const COLLECTIONS = {
+  PRODUCTS: 'products',
+  ORDERS: 'orders',
+  LOGS: 'logs',
 };
-
-const initDB = () => {
-  if (!localStorage.getItem(DB_KEYS.PRODUCTS)) {
-    localStorage.setItem(DB_KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
-  }
-  if (!localStorage.getItem(DB_KEYS.ORDERS)) {
-    localStorage.setItem(DB_KEYS.ORDERS, JSON.stringify([]));
-  }
-  if (!localStorage.getItem(DB_KEYS.LOGS)) {
-    localStorage.setItem(DB_KEYS.LOGS, JSON.stringify([]));
-  }
-};
-
-initDB();
 
 export const db = {
   products: {
+    // One-time fetch (used where a snapshot listener isn't set up, e.g. Home/Menu on first paint)
     getAll: async (): Promise<Product[]> => {
-      return JSON.parse(localStorage.getItem(DB_KEYS.PRODUCTS) || '[]');
+      const snap = await getDocs(collection(firestore, COLLECTIONS.PRODUCTS));
+      return snap.docs.map(d => ({ id: d.id, ...d.data() } as Product));
     },
-    getById: async (id: string): Promise<Product | undefined> => {
-      const products = await db.products.getAll();
-      return products.find(p => p.id === id);
-    },
-    save: async (product: Partial<Product>): Promise<Product> => {
-      const products = await db.products.getAll();
-      let updatedProduct: Product;
 
+    getById: async (id: string): Promise<Product | undefined> => {
+      const ref = doc(firestore, COLLECTIONS.PRODUCTS, id);
+      const snap = await getDoc(ref);
+      return snap.exists() ? ({ id: snap.id, ...snap.data() } as Product) : undefined;
+    },
+
+    // Real-time listener — call this from components instead of getAll() where live updates matter
+    subscribe: (callback: (products: Product[]) => void): Unsubscribe => {
+      const ref = collection(firestore, COLLECTIONS.PRODUCTS);
+      return onSnapshot(ref, snap => {
+        const products = snap.docs.map(d => ({ id: d.id, ...d.data() } as Product));
+        callback(products);
+      });
+    },
+
+    save: async (product: Partial<Product>): Promise<Product> => {
       if (product.id) {
-        const index = products.findIndex(p => p.id === product.id);
-        if (index !== -1) {
-          updatedProduct = { ...products[index], ...product } as Product;
-          products[index] = updatedProduct;
-        } else {
-          updatedProduct = product as Product;
-          products.push(updatedProduct);
-        }
+        // Update existing
+        const ref = doc(firestore, COLLECTIONS.PRODUCTS, product.id);
+        const { id, ...data } = product;
+        await setDoc(ref, data, { merge: true });
+        return product as Product;
       } else {
-        updatedProduct = {
-          ...product,
-          id: Math.random().toString(36).substr(2, 9),
+        // Create new — let Firestore generate the ID
+        const { id, ...data } = product;
+        const payload = {
+          ...data,
           stock: product.stock || 0,
           featured: product.featured || false,
-        } as Product;
-        products.push(updatedProduct);
+        };
+        const docRef = await addDoc(collection(firestore, COLLECTIONS.PRODUCTS), payload);
+        return { id: docRef.id, ...payload } as Product;
       }
-
-      localStorage.setItem(DB_KEYS.PRODUCTS, JSON.stringify(products));
-      return updatedProduct;
     },
+
     delete: async (id: string): Promise<void> => {
-      const products = JSON.parse(localStorage.getItem(DB_KEYS.PRODUCTS) || '[]');
-      const filtered = products.filter((p: Product) => p.id !== id);
-      localStorage.setItem(DB_KEYS.PRODUCTS, JSON.stringify(filtered));
-      return Promise.resolve();
+      await deleteDoc(doc(firestore, COLLECTIONS.PRODUCTS, id));
     },
   },
+
   orders: {
     getAll: async (): Promise<Order[]> => {
-      return JSON.parse(localStorage.getItem(DB_KEYS.ORDERS) || '[]');
+      const q = query(collection(firestore, COLLECTIONS.ORDERS), orderBy('createdAt', 'desc'));
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({ id: d.id, ...d.data() } as Order));
     },
+
+    // Real-time listener for the admin dashboard
+    subscribe: (callback: (orders: Order[]) => void): Unsubscribe => {
+      const q = query(collection(firestore, COLLECTIONS.ORDERS), orderBy('createdAt', 'desc'));
+      return onSnapshot(q, snap => {
+        const orders = snap.docs.map(d => ({ id: d.id, ...d.data() } as Order));
+        callback(orders);
+      });
+    },
+
     create: async (order: Omit<Order, 'id' | 'createdAt' | 'status'>): Promise<Order> => {
-      const orders = await db.orders.getAll();
-      const newOrder: Order = {
+      const payload = {
         ...order,
-        id: `ORD-${Date.now()}`,
-        status: 'pending',
+        status: 'pending' as const,
         createdAt: new Date().toISOString(),
       };
-      orders.push(newOrder);
-      localStorage.setItem(DB_KEYS.ORDERS, JSON.stringify(orders));
-      return newOrder;
+      const docRef = await addDoc(collection(firestore, COLLECTIONS.ORDERS), payload);
+      return { id: docRef.id, ...payload };
     },
+
     updateStatus: async (id: string, status: Order['status']): Promise<void> => {
-      const orders = await db.orders.getAll();
-      const index = orders.findIndex(o => o.id === id);
-      if (index !== -1) {
-        orders[index].status = status;
-        localStorage.setItem(DB_KEYS.ORDERS, JSON.stringify(orders));
-      }
+      const ref = doc(firestore, COLLECTIONS.ORDERS, id);
+      await updateDoc(ref, { status });
     },
+
     delete: async (id: string): Promise<void> => {
-      const orders = await db.orders.getAll();
-      const filtered = orders.filter(o => o.id !== id);
-      localStorage.setItem(DB_KEYS.ORDERS, JSON.stringify(filtered));
+      await deleteDoc(doc(firestore, COLLECTIONS.ORDERS, id));
     },
   },
+
   logs: {
     create: async (log: Omit<AdminLog, 'id' | 'timestamp'>): Promise<void> => {
-      const logs = JSON.parse(localStorage.getItem(DB_KEYS.LOGS) || '[]');
-      logs.unshift({
+      await addDoc(collection(firestore, COLLECTIONS.LOGS), {
         ...log,
-        id: Math.random().toString(36).substr(2, 9),
         timestamp: new Date().toISOString(),
       });
-      localStorage.setItem(DB_KEYS.LOGS, JSON.stringify(logs.slice(0, 100)));
     },
+
     getAll: async (): Promise<AdminLog[]> => {
-      return JSON.parse(localStorage.getItem(DB_KEYS.LOGS) || '[]');
+      const q = query(collection(firestore, COLLECTIONS.LOGS), orderBy('timestamp', 'desc'));
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({ id: d.id, ...d.data() } as AdminLog));
     },
   },
 };

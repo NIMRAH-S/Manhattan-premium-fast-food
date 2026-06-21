@@ -10,32 +10,32 @@ export const AdminDashboard: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const loadOrders = async () => {
-    setIsLoading(true);
-    const allOrders = await db.orders.getAll();
-    setOrders(allOrders.slice().reverse());
-    setIsLoading(false);
-  };
-
   useEffect(() => {
-    loadOrders();
+    const unsubscribe = db.orders.subscribe((allOrders) => {
+      setOrders(allOrders);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleStatusChange = async (orderId: string, newStatus: Order['status']) => {
-    await db.orders.updateStatus(orderId, newStatus);
-    setOrders(prev => prev.map(o => (o.id === orderId ? { ...o, status: newStatus } : o)));
-    toast.success(`Order marked as ${newStatus}`, { style: { borderRadius: '0px' } });
+    try {
+      await db.orders.updateStatus(orderId, newStatus);
+      toast.success(`Order marked as ${newStatus}`, { style: { borderRadius: '0px' } });
+      // No manual state update needed — onSnapshot pushes the change automatically
+    } catch {
+      toast.error('Failed to update order status');
+    }
   };
 
   const handleDelete = async (orderId: string) => {
     if (!window.confirm('PERMANENTLY DELETE THIS ORDER? This cannot be undone.')) return;
     try {
-      setOrders(prev => prev.filter(o => o.id !== orderId));
       await db.orders.delete(orderId);
       toast.success('Order deleted', { style: { borderRadius: '0px' } });
+      // No manual state update needed — onSnapshot pushes the change automatically
     } catch {
       toast.error('Failed to delete order');
-      loadOrders();
     }
   };
 
@@ -61,7 +61,7 @@ export const AdminDashboard: React.FC = () => {
   };
 
   return (
-    <div className="p-8 bg-[#F5F1E8] min-h-screen">
+    <div className="p-8 pt-32 bg-[#F5F1E8] min-h-screen">
       <div className="max-w-7xl mx-auto">
         <div className="mb-12">
           <h1 className="text-5xl font-serif font-black text-[#1A1A1A] tracking-tighter uppercase">Operations.</h1>

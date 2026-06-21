@@ -12,11 +12,10 @@ export const Home: React.FC = () => {
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      const all = await db.products.getAll();
+    const unsubscribe = db.products.subscribe((all) => {
       setFeaturedProducts(all.filter(p => p.featured));
-    };
-    fetchProducts();
+    });
+    return () => unsubscribe();
   }, []);
 
   return (

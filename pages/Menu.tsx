@@ -24,12 +24,11 @@ export const Menu: React.FC = () => {
   }, [searchParams]);
 
   useEffect(() => {
-    const fetch = async () => {
-      const all = await db.products.getAll();
+    const unsubscribe = db.products.subscribe((all) => {
       setProducts(all);
       setIsLoading(false);
-    };
-    fetch();
+    });
+    return () => unsubscribe();
   }, []);
 
   const filteredProducts = useMemo(() => {
